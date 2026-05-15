@@ -1,0 +1,231 @@
+\documentclass[10pt]{article}
+
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{microtype}
+\usepackage{ragged2e}
+
+% Research-paper-ish spacing (tight but readable)
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+
+\title{Event-Driven Containerized MLFlow Pipeline for Face Recognition on AWS}
+\author{
+\small
+\begin{tabular}{c c c}
+Aedan J. & Sawyer Byrd & Aaryadev Chandra \\
+105671990 & 117786866 & 122283497
+\end{tabular}
+}
+\date{\small Spring 2026}
+
+\begin{document}
+
+% Make the entire proposal smaller like a research paper
+\small
+\maketitle
+
+\section*{Problem Statement}
+
+Modern machine learning systems often struggle to transition from experimentation to production due to limited automation, poor reproducibility, and insufficient scalability. Manual retraining and redeployment introduce operational overhead, delays, and reliability risks. This project designs and implements an event-driven, containerized MLOps pipeline in the cloud that automatically detects new data, preprocesses it, retrains a face recognition model, logs metrics, registers validated model versions, and updates a live inference endpoint with minimal downtime. The system will be evaluated quantitatively across availability, reliability, efficiency, and scalability.
+
+\section*{High-Level Solution}
+
+We implement a modular, multi-container architecture where each ML lifecycle stage runs in an isolated service. New data uploaded to an AWS S3 bucket triggers a scheduler (cron-based or event-driven) that invokes a preprocessing container. The processed dataset is forwarded to a training container, which retrains the model, logs metrics and artifacts to MLflow, and conditionally promotes the model to a registry based on evaluation thresholds. An inference container periodically checks for (or is notified of) a newly promoted production model, pulls the latest model version from the registry, and hot-swaps the local serving artifact. All subsequent inference requests are served using the most recent validated model.
+
+\section*{Implementation Tools}
+
+\begin{itemize}[leftmargin=*]
+    \item Cloud Platform: Amazon Web Services (AWS)
+    \item Storage: Amazon S3 (data bucket for new dataset uploads)
+    \item Containers: Docker
+    \item Orchestration: Kubernetes or Docker Compose
+    \item Experiment Tracking \& Model Registry: MLflow
+    \item API Serving: FastAPI
+    \item Monitoring \& Telemetry:
+    \begin{itemize}[leftmargin=*]
+        \item Prometheus (time-series metrics collection and storage)
+        \item Node Exporter (hardware/network metrics: CPU, memory, disk, network I/O)
+        \item Application metrics exported from services (request rate, latency, error rate, retrain job stats)
+        \item Grafana (dashboarding and visualization)
+    \end{itemize}
+\end{itemize}
+
+\newpage
+
+
+\section*{System Architecture}
+
+\begin{verbatim}
+                                +----------------------+
+                                |      End Users       |
+                                +----------+-----------+
+                                           |
+                                           v
+                                +----------------------+
+                                |  ALB / API Gateway   |
+                                +----------+-----------+
+                                           |
+                                           v
++----------------------+        +----------------------+        +----------------------+
+|      AWS S3 Bucket   | -----> |  Scheduler (Cron)    | -----> | Preprocess Container |
+| (raw data uploads)   |        | (new data detector)  |        |  (ETL + PCA)         |
++----------+-----------+        +----------+-----------+        +----------+-----------+
+           |                               |                               |
+           |                               |                               v
+           |                               |                    +----------------------+
+           |                               |                    | Training Container   |
+           |                               |                    | (PyTorch train)      |
+           |                               |                    +----------+-----------+
+           |                               |                               |
+           |                               |                               v
+           |                               |                    +----------------------+
+           |                               +------------------> |  MLflow Tracking     |
+           |                                                    | + Artifact Store      |
+           |                                                    | + Model Registry      |
+           |                                                    +----------+-----------+
+           |                                                               |
+           |                                                               v
+           |                                                    +----------------------+
+           |                                                    | Inference Container  |
+           |                                                    | (FastAPI REST)       |
+           |                                                    | (pull latest model)  |
+           |                                                    +----------+-----------+
+           |                                                               |
+           |                                                               v
+           |                                                    +----------------------+
+           |                                                    |   Predictions API    |
+           |                                                    +----------------------+
+           |
+           |          Metrics scrape (hardware/network/app)
+           v
++----------------------+       +----------------------+       +----------------------+
+| Node Exporter        | --->  | Prometheus Container | --->  | Grafana Dashboard    |
+| (CPU/Mem/Disk/Net)   |       | (TSDB + scrape)      |       | (visualization)      |
++----------------------+       +----------------------+       +----------------------+
+
+Notes:
+- Preprocess/Train/Inference containers expose /metrics endpoints (app metrics).
+- Prometheus scrapes Node Exporter + container endpoints for system/network/app telemetry.
+\end{verbatim}
+\newpage
+
+
+\section*{Model Development}
+
+Our project implements a face recognition model that serves as the core inference component of the containerized MLOps pipeline. The model is continuously improved through automated retraining and version-controlled deployment.
+
+\begin{itemize}[leftmargin=*]
+
+\item \textbf{Framework:}
+PyTorch is used as the primary deep learning framework for model development and training. It provides flexibility for experimentation, efficient tensor computation, GPU acceleration support, and seamless integration with containerized environments.
+
+\item \textbf{Dataset:}
+The Labeled Faces in the Wild (LFW) dataset is used as a proof-of-concept benchmark. LFW contains over 13,000 labeled images collected under unconstrained conditions, including variations in pose, illumination, and facial expression. This enables evaluation of model robustness under realistic scenarios.
+
+\item \textbf{Dimensionality Reduction:}
+Principal Component Analysis (PCA) is applied as a preprocessing step to reduce feature dimensionality while preserving significant facial variance components. This reduces computational overhead, lowers memory usage, and improves inference latency within resource-constrained containers.
+
+\item \textbf{Model Packaging and Continuous Updates:}
+Training metrics and artifacts are logged to MLflow for experiment tracking and reproducibility. Models that exceed predefined promotion thresholds (e.g., improvement in F1-score or ROC-AUC compared to the currently deployed model) are versioned and promoted within the MLflow Model Registry. The inference container periodically pulls the latest production model to ensure that predictions are served using the most recent validated model.
+
+\end{itemize}
+
+\section*{Quantitative Evaluation}
+
+We will evaluate the deployed system using established metrics aligned with availability, reliability, efficiency, and scalability. Metrics are collected via Prometheus (system/container/app telemetry) and MLflow (ML metrics and artifacts). Controlled load tests (e.g., increasing concurrent requests) will be used to quantify scaling behavior.
+
+\subsection*{Evaluation Metrics (Summary Table)}
+
+\begin{table}[h!]
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{>{\RaggedRight\arraybackslash}p{3.1cm} >{\RaggedRight\arraybackslash}p{5.8cm} >{\RaggedRight\arraybackslash}p{5.2cm}}
+\toprule
+\textbf{Category} & \textbf{Metrics} & \textbf{How Measured (Source)} \\
+\midrule
+Availability &
+Uptime (\%), service restart recovery time, MTBF &
+Prometheus scrape availability, container restarts, time-to-healthy (Prometheus / orchestrator stats) \\
+\midrule
+Reliability &
+HTTP 5xx error rate, failed deployment rate, rollback success &
+App metrics (/metrics), deployment events, error counters (Prometheus + deployment logs) \\
+\midrule
+Efficiency &
+Inference latency (p50/p95/p99), CPU/memory per request, training duration &
+Histogram latency metrics, resource utilization, job timers (Prometheus + MLflow train time) \\
+\midrule
+Scalability &
+Throughput (RPS) vs replicas, latency vs concurrency, saturation points &
+Load test curves; replica scaling response; latency distributions (Prometheus + load tool outputs) \\
+\midrule
+ML Quality &
+Accuracy, precision, recall, F1-score, ROC-AUC; model version &
+Logged during training and evaluation (MLflow); deployed version tracked by inference service (Prometheus gauge + MLflow) \\
+\bottomrule
+\end{tabular}
+\end{table}
+\section*{Team Responsibilities}
+
+\begin{itemize}[leftmargin=*]
+
+\item \textbf{Aedan: Infrastructure and Deployment}
+Responsible for cloud configuration and container orchestration. This includes AWS resource provisioning, containerization using Docker, deployment using ECS/Kubernetes, networking configuration, and ensuring system availability and scalability.
+
+\item \textbf{Sawyer: Model Development}
+Responsible for implementation of the facial recognition model using PyTorch. This includes dataset preprocessing, PCA integration, model training, evaluation, and optimization for deployment within the containerized environment.
+
+\item \textbf{Aaryadev: MLOps Pipeline and Experiment Management}
+Responsible for designing and implementing the MLflow pipeline. This includes experiment tracking, metric and performance logging, model versioning and registry management, hyperparameter tuning workflows, and automated model promotion logic.
+
+\end{itemize}
+
+\section*{Current Progress}
+
+\begin{itemize}[leftmargin=*]
+
+\item \textbf{Aaryadev (MLOps Pipeline):} The MLflow tracking server and model registry are fully operational end-to-end. Experiment logging, artifact storage, and model versioning have been validated. The automated model promotion logic---threshold-based registry push and version tagging---is functional, confirming the core MLOps loop works as intended.
+
+\item \textbf{Sawyer (Model Development):} A first draft of the model implementation has been completed. For now,  we have only been running it localy from the command line. However the code includes scalable functionality for integration with the rest of our final pipeline. The skeleton description is as follows:
+
+    - config.py: Central configuration for the face recognition pipeline.
+
+    - dataset.py: Collects the dataset, splits, fit PCA, convert to PyTorch dataset.
+
+    - inference.py: Loads the current Production model + preprocessors from the MLflow registry and defines a simple predict() function.
+
+    - model.py: MLP classifier that operates on PCA-reduced face feature vectors.
+
+    -  train.py: End-to-end entry point for the entire model and integrations.
+
+\item \textbf{Aedan (Infrastructure \& Deployment):} AWS environment scaffolding is complete. An S3 bucket for raw data ingestion has been provisioned with appropriate IAM roles and bucket policies. Dockerfiles for the preprocessing, training, and inference containers have been authored and validated locally. A Docker Compose configuration enabling full local multi-container development has been tested end-to-end. AWS ECR repositories have been created to host container images in preparation for ECS/Kubernetes deployment.
+
+\end{itemize}
+
+\section*{Challenges and Next Steps}
+
+\begin{itemize}[leftmargin=*]
+
+\item The immediate next milestone is integrating Sawyer's trained model into Aaryadev's validated MLflow registry pipeline, followed by wiring the inference container to the FastAPI serving layer.
+
+\item Once the model--MLflow integration is stable, Aedan will proceed with deploying the containerized stack to AWS ECS and configuring auto-scaling policies.
+
+\item Prometheus scrape targets and Grafana dashboards are planned for the final phase, enabling quantitative evaluation against the metrics defined above.
+
+\end{itemize}
+
+\section*{Open Questions / Potential Problems}
+
+\begin{itemize}[leftmargin=*]
+
+\item \textbf{Cloud Computing Budget Constraints:} Our current pipeline architecture is built on AWS (S3, ECR, ECS). However, the class-allotted cloud computing credits (\$600) are provisioned on Google Cloud Platform (GCP), not AWS. Continued development and testing on AWS will incur out-of-pocket costs, which is unsustainable for iterative testing and load experiments. We may need to evaluate migrating the pipeline infrastructure to GCP (e.g., replacing S3 with Cloud Storage, ECR with Artifact Registry, and ECS with Cloud Run or GKE) in order to leverage the available credits and stay within budget.
+
+\end{itemize}
+
+\end{document}

@@ -1,0 +1,27 @@
+# User stack — inference service only.
+#
+# Local demo (model bundle pre-built by admin):
+#   docker compose -f docker-compose.user.yml up --build
+#
+# Against AWS S3 (admin has already trained and stored artifacts there):
+#   STORAGE_BACKEND=s3 S3_BUCKET=my-bucket S3_REGION=us-east-1 \
+#   docker compose -f docker-compose.user.yml up --build
+
+services:
+  inference:
+    build:
+      context: .
+      dockerfile: services/inference/Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      STORAGE_ROOT: /data
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      MODEL_DIR: models/latest
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PREFIX: ${S3_PREFIX:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+    volumes:
+      # Only mounted for local storage — remove this block when using S3.
+      - ./storage:/data

@@ -1,0 +1,4 @@
+# Deprecated monolithic stack. Install per service instead:
+#   pip install -r services/preprocessing/requirements.txt
+#   pip install -r services/retraining/requirements.txt
+#   pip install -r services/inference/requirements.txt

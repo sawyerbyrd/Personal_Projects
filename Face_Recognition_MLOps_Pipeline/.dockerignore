@@ -1,0 +1,17 @@
+# Exclude runtime data and dev artifacts from Docker build context.
+# Only shared/ and services/ are needed to build the images.
+
+.git/
+.env
+storage/
+mlartifacts/
+mlflow.db
+mlflow copy.db
+model/
+scripts/
+docs/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.egg-info/
+.pytest_cache/

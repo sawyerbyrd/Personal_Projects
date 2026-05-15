@@ -1,0 +1,72 @@
+# Local 4-service stack: shared storage volume = simulated shared disk / future NFS mount.
+#
+# Switch to S3:  set STORAGE_BACKEND=s3 + S3_BUCKET/S3_REGION/AWS_* in .env and
+#                remove the ./storage:/data volumes.  No code changes required.
+
+services:
+  mlflow:
+    build:
+      context: .
+      dockerfile: services/mlflow/Dockerfile
+    ports:
+      - "5001:5000"
+    volumes:
+      - mlflow_data:/mlflow
+
+  preprocessing:
+    build:
+      context: .
+      dockerfile: services/preprocessing/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      STORAGE_ROOT: /data
+      STORAGE_BACKEND: local
+      PREPROCESSED_DIR: preprocessed
+      MODEL_DIR: models/latest
+      MLRUNS_DIR: mlruns
+      RETRAIN_BASE_URL: http://retraining:8002
+      PREPROCESS_TRIGGER_RETRAIN: "true"
+    volumes:
+      - ./storage:/data
+    depends_on:
+      - retraining
+
+  retraining:
+    build:
+      context: .
+      dockerfile: services/retraining/Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      STORAGE_ROOT: /data
+      STORAGE_BACKEND: local
+      PREPROCESSED_DIR: preprocessed
+      MODEL_DIR: models/latest
+      MLRUNS_DIR: mlruns
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_EXPERIMENT_NAME: face_recognition_lfw
+      MLFLOW_MODEL_NAME: face_recognition_model
+      INFERENCE_BASE_URL: http://inference:8003
+      RETRAIN_NOTIFY_INFERENCE: "true"
+    volumes:
+      - ./storage:/data
+    depends_on:
+      - inference
+      - mlflow
+
+  inference:
+    build:
+      context: .
+      dockerfile: services/inference/Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      STORAGE_ROOT: /data
+      STORAGE_BACKEND: local
+      MODEL_DIR: models/latest
+    volumes:
+      - ./storage:/data
+
+volumes:
+  mlflow_data:
